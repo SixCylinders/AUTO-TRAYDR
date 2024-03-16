@@ -33,7 +33,7 @@ tradedToday = False #has program already run through trade sequence today
 refilledBrokerage = True #added money at start of month
 
 #Constants/Inportant shit
-PROGRAM_NAME = "AUTO-TRAYDR Version 0.1 \nThis script by Christopher Slemmer \nRobinStocks by Joshua M. Fernandes \nBlah blah blah I am not affiliated with or endorsed by RobinStocks blah blah"
+PROGRAM_NAME = "AUTO-TRAYDR Version 0.1 \nThis script by Christopher S \nRobinStocks by Joshua M. Fernandes \nBlah blah blah I am not affiliated with or endorsed by RobinStocks blah blah"
 credentials = ['DUMMYUSERNAME', 'DUMMYPASSWORD']
 WEEKLY_BUDGET_PER_STOCK = 3.0
 MONTHLY_BROKERAGE_PAYMENTS = numAllCompanies * WEEKLY_BUDGET_PER_STOCK * 52
