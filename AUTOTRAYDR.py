@@ -1,9 +1,9 @@
-# Changelog 0.7
+# Changelog 0.9.1
 """
 cleaner code
 lots of other new shit i forgor to document
 """
-#recommended cron timing below. Program is able to handle other cron timings, buy why would you change it? There's no need for it
+#recommended cron timing below. Program is able to handle other cron timings, buy why would you change it? There's no need for it. you also gotta change shit in mainloop()
 #5 12,16 * * *
 #full command to be pasted into cron
 #5 12,16 * * * bash -c "source /home/myVenv/bin/activate && /home/myVenv/bin/python3 /home/AUTOTRAYDR.py"
@@ -17,22 +17,34 @@ import pyotp #auto 2factor if you choose
 from stopit import threading_timeoutable as timeoutable #prevents program from running FOREVER
 from datetime import datetime #get time
 
-stockList = ['AMCX', 'AMD', 'AMZN', 'ARM', 'AVGO', #developer stocklist teehee
-			'CATX', 'CIFR', 'CLSD', 'CLSK', 'COST', 'CRWD', 
-			'DELL', 'DJT', 'DTST', 
-			'GME', 'GE', 'GLD', 'GOOGL',  
-			'LLY', 'LMT', 'LRCX', 
-			'META', 'MSFT', 'MSTR', 'MU', 
-			'NFLX', 'NKTX', 'NVDA', 
-			'PAA', 
-			'QCOM', 
-			'SLV', 'SMCI', 
-			'TM', 'TSLA', 'TSM', 
-			'V', 'VINC', 
-			'XOM',
-			'ZJYL']
+stockList = ['AMD', 'ALAB', 'AMZN', 'ANET', 'ARHS', 'ARM', 'AVGO', #developer stocklist teehee
+	'BAC', 
+	'CAT', 'CIFR', 'CLSD', 'CLSK', 'COST', 'CRWD', 
+	'DELL', 'DTST', 
+	'GD', 'GE', 'GLD', 'GME', 'GOOGL', 
+	'HOOD',
+	'LLY', 'LMT', 'LOGI', 'LRCX', 
+	'META', 'MSFT', 'MSTR', 'MU', 
+	'NFLX', 'NTAP', 'NVDA', 
+	'PAA', 'PEG',
+	'QCOM', 
+	'RDDT', 'RTX',
+	'SLV', 'SMCI', 
+	'TM', 'TSLA', 'TSM', 
+	'V', 'VOO',
+	'XOM',
+]
+lcList = ['AMCX',
+	'CATX',
+	'DJT',
+	'GME',
+	'INTC',
+	'NKTX',
+	'VINC',
+	'ZJYL',
+]
 cryptoList = ['AVAX', 'BTC', 'DOGE', 'ETH', 'SHIB', 'UNI']
-skipSetup = False #overrides setup if dev prefs were loaded
+loadedDevPrefs = False #overrides setup if dev prefs were loaded
 TRADE_PARAM_DISABLED = 7050
 numAllCompanies = 35
 indentNum = 1
@@ -55,8 +67,27 @@ budget = {
 	"weeklyBudgetPerStock": 0.0,
 	"weeklyBudgetTotal": 0.0,
 	"monthlyBudgetTotal": 0.0,
+	"moneyLeftDaily": 0.0,
+	"moneyLeftTotal": 0.0,
 }
-tradeParams = {}
+tradeParams = {
+	"pcBottomThreshold": 0.0,
+	"pcBottomNum": 0,
+	"pcBottomBudget": 0.0,
+	"pcTopNum": 0,
+	"pcTopBudget": 0.0,
+	"equityBottomNum": 0,
+	"equityBottomBudget": 0.0,
+	"ageOldestNum": 0,
+	"ageOldestThreshold": 0,
+	"ageOldestBudget": 0.0,
+	"performanceDays": 0, #num of days stock had highest percent change
+	"performanceTopNum": 0,
+	"performanceTopBudget": 0.0,
+	"performanceBottomNum": 0,
+	"performanceBottomBudget": 0.0,
+}
+	
 oneTime = {
 	"forceWeekend": False, #input args
 	"forceTrade": False,
@@ -76,23 +107,109 @@ accountInfo = { #how to encrypt this variable hmmmmmm thinky thinky
 	"auto2factor": False,
 	"auto2FactorCode": "",
 }
+devMode = False #automatically propagates dev prefs since im tired of updating them every time i revise this program
 #/Saved data
 """
-#TODO stock info pnt in placeOrder should be formatted. too many decimals
-#TODO encrypt passswords
-WIP trade fail
+TODO encrypt passswords
+TODO if load fails, assign arbitrary value if user action not required
+TODO buy random
+TODO replace lowcondifence with just confidence
+TODO make manual
+TODO maybe reason stock fails is because $1.00 is RIGHT on the line... make minimum trade $1.25?
+TODO check log file size before startup. pnt checks are excessive
+TODO not resetting at 1600 in mainloop
+TODO lcAmount not saved, lcbudget gets filled with default 0.0
+TODO check stockinfo to ref to get rid of stocks that shouldnt be there
+
+WIP verify integrity of stockInfo and other variables upon load
+^^ make base variable. iterate over using loadVariable, throw error if fucked
 """
 
 #startup/shutdown
+def verifyIntegrity(): #WIP
+	global indentNum
+	global stockInfo
+	indentNum += 1
+	pnt("Entered verifyIntegrity")
+
+	pnt("verifying correct stocks")
+	for ref in stockList:
+		found = False
+		for stock in stockInfo.keys():
+			if ref == stock:
+				stockInfo[ref]['isCrypto'] = False
+				stockInfo[ref]['lowConfidence'] = False
+				stockInfo[ref]['lcBudget'] = 0.0
+				found = True
+				continue
+		if not found:
+			pnt(ref + " not in stockInfo stocklist")
+			stockInfo[ref] = {}
+			stockInfo[ref]['isCrypto'] = False
+			stockInfo[ref]['lowConfidence'] = False
+			stockInfo[ref]['lcBudget'] = 0.0
+			pnt(stockInfo[ref])
+	pnt("crypto")
+	for ref in cryptoList:
+		found = False
+		for stock in stockInfo.keys():
+			if ref == stock:
+				stockInfo[ref]['isCrypto'] = True
+				stockInfo[ref]['lowConfidence'] = False
+				stockInfo[ref]['lcBudget'] = 0.0
+				found = True
+				continue
+		if not found:
+			pnt(ref + " not in stockInfo cryptolist")
+			stockInfo[ref] = {}
+			stockInfo[ref]['isCrypto'] = True
+			stockInfo[ref]['lowConfidence'] = False
+			stockInfo[ref]['lcBudget'] = 0.0
+			pnt(stockInfo[ref])
+	pnt("low confidence")
+	for ref in lcList:
+		found = False
+		for stock in stockInfo.keys():
+			if ref == stock:
+				stockInfo[ref]['isCrypto'] = False
+				stockInfo[ref]['lowConfidence'] = True
+				found = True
+				continue
+		if not found:
+			pnt(ref + " not in stockInfo lclist")
+			stockInfo[ref] = {}
+			stockInfo[ref]['isCrypto'] = False
+			stockInfo[ref]['lowConfidence'] = True
+			stockInfo[ref]['lcBudget'] = 0.0
+			pnt(stockInfo[ref])
+
+	for stock in stockInfo: #TODO may be unnecessary since integrity is checked in updatestockinfo
+		newlist = []
+		i = 0
+		while i < tradeParams['performanceDays']: #verify list length
+			try:
+				newlist.append(stockInfo[stock]['performance'][i])
+			except:
+				pnt(stock + " performance shorter than expected")
+				newlist.append(1)
+			i += 1
+		stockInfo[stock]['performance'] = newlist
+	pnt("verifying budget")
+
+	pnt("verifying tradeParams")
+
+	pnt("verifying oneTime")
+
+	pnt("Exited verifyIntegrity")
+	indentNum -= 1
 def splash():
 	global indentNum
 	indentNum += 1
-	pntDev("Entered splash")
+	pnt("Entered splash")
 	financesSplash()
 	pnt("Sorted by percent change")
 	pnt("Buy bottom " + str(tradeParams['pcBottomNum']) + " stocks, $" + str(tradeParams['pcBottomBudget']) + " each. Only if stock's percent change is less than -" + str(tradeParams['pcBottomThreshold']) + "%")
 	pnt("Buy top " + str(tradeParams['pcTopNum']) + " stocks, $" + str(tradeParams['pcTopBudget']) + " each")
-	pnt("Sell $" + str(tradeParams['pcTopSellBudget']) + " of each stock when percent change is greater than +" + str(tradeParams['pcTopSellThresh']) + "%")
 	pnt("Sorted by equity")
 	pnt("Buy bottom " + str(tradeParams['equityBottomNum']) + " stocks, $" + str(tradeParams['equityBottomBudget']) + " each")
 	pnt("Sorted by last bought")
@@ -106,7 +223,7 @@ def splash():
 	pnt("Daily remaining funds: $" + str(remainingFunds) + " (You should have around a dollar's worth of margin here. Do NOT try to optimize this below $0.10)")
 	if remainingFunds < 0.0:
 		pnt("Buy orders exceed daily budget. Buy less shit, or work harder")
-	pntDev("Exited splash")
+	pnt("Exited splash")
 	indentNum -= 1
 def startup(condition):
 	global indentNum
@@ -121,25 +238,27 @@ def startup(condition):
 	2 - test all mainLoop functions
 	3 - user activated reset
 	4 - user activated trade
+	5 - update stockinfo only
 	"""
-	pntDev("Entered startup")
-	pntDev("Startup condition " + str(condition))
+	pnt("Entered startup")
+	pnt("Startup condition " + str(condition))
 	number = 0
 	whileNum = 0
 	while True:
 		number += 1
-		if number >= 4:
-			stop()
-		if whileNum >= 4:
+		if number >= 4 or whileNum >= 4:
 			stop()
 		try:
 			load() #calls setup if error
-			if condition == 1 and not skipSetup:
+			if devMode:
+				verifyIntegrity()
+			if condition == 1 and not loadedDevPrefs:
 				setup(0)
 			login()
 			break
-		except:
-			pntDev("Error in startup loop")
+		except Exception as e:
+			pnt("Error in startup loop")
+			pnt(e)
 			whileNum += 1
 
 	if condition == 0 or condition == 1:
@@ -147,32 +266,28 @@ def startup(condition):
 		oneTime['forceTrade'] = False
 		mainLoop()
 	elif condition == 2:
-		pntDev("Program disarmed")
+		pnt("Program disarmed")
 		tempArmed = defconLevel
 		defconLevel = 2
 		pnt("Testing weekend...")
-		pntDev("Testing weekend...")
 		oneTime['testWeekend'] = True
 		oneTime['testTrade'] = False
 		oneTime['testReset'] = False
 		mainLoop()
 		login()
 		pnt("Testing trade...")
-		pntDev("Testing trade...")
 		oneTime['testWeekend'] = False
 		oneTime['testTrade'] = True
 		oneTime['testReset'] = False
 		mainLoop()
 		login()
 		pnt("Testing reset...")
-		pntDev("Testing reset...")
 		oneTime['testWeekend'] = False
 		oneTime['testTrade'] = False
 		oneTime['testReset'] = True
 		mainLoop()
 		oneTime['testReset'] = False
 		pnt("Testing complete")
-		pntDev("Testing complete")
 		defconLevel = tempArmed
 	elif condition == 3:
 		oneTime['forceReset'] = True
@@ -184,13 +299,15 @@ def startup(condition):
 		oneTime['forceTrade'] = True
 		mainLoop()
 		oneTime['forceTrade'] = False
-	pntDev("Exited startup")
+	elif condition == 5:
+		updateStockInfo()
+	pnt("Exited startup")
 	indentNum -= 1
 def login(): #calls setup if error
 	global indentNum
 	global accountInfo
 	indentNum += 1
-	pntDev("Entered login")
+	pnt("Entered login")
 	pnt("Logging in...")
 	try:
 		wait(1)
@@ -200,29 +317,29 @@ def login(): #calls setup if error
 		else: #no 2factor bypass
 			login = rs.login(accountInfo['username'], accountInfo['password'])
 
-		pntDev("Login successful")
+		pnt("Login successful")
 		pnt("Welcome, " + str(accountInfo['username']))
-		pntDev("Exited login")
+		pnt("Exited login")
 		indentNum -= 1
 	except Exception as e:
 		print(e)
-		pntDev("Error logging in. Invalid accountInfo")
+		pnt("Error logging in. Invalid accountInfo")
 		pnt("ERROR-INVALIDLOGIN")
 		pnt("Error logging in. Check spelling of your username and password")
 		pnt("User- " + accountInfo['username'])
 		pnt("Pass- " + accountInfo['password'])
 		setup(1)
-		pntDev("Exited login")
+		pnt("Exited login")
 		indentNum -= 1
 		raise ValueError("Error logging in. Check spelling of your username and password")
 def logout():
 	global indentNum
 	indentNum += 1
-	pntDev("Entered logout")
+	pnt("Entered logout")
 	pnt("Logging out...")
 	wait(1)
 	rs.logout()
-	pntDev("Exited logout")
+	pnt("Exited logout")
 	indentNum -= 1
 
 #main
@@ -231,7 +348,7 @@ def mainLoop():
 	global budget
 	global oneTime
 	indentNum += 1
-	pntDev("Entered mainLoop")
+	pnt("Entered mainLoop")
 	
 	now = datetime.now()
 	weekday = now.weekday()
@@ -244,44 +361,51 @@ def mainLoop():
 	isweekend = weekday > 4 and not oneTime['weekendCheck'] #skip weekends
 	if oneTime['forceWeekend'] or isweekend or oneTime['testWeekend']:
 		pnt("Weekend")
-		pntDev("Weekend")
 		if defconLevel != 2:
 			oneTime['weekendCheck'] = True
 
 	istrade = weekday <= 4 and hour == 12 and not oneTime['tradeCheck'] #trade on weekday at noon
 	if oneTime['forceTrade'] or istrade or oneTime['testTrade']:
-		getStockPrices()
+		updateStockInfo()
 		save()
 		trade()
 		if defconLevel != 2:
 			oneTime['tradeCheck'] = True
 			oneTime['resetCheck'] = False
 
+	pnt("reset params")
+	pnt("hour " + str(hour))
+	pnt("weekday " + str(weekday))
+	pnt("check " + str(oneTime['resetCheck']))
+	pnt("force " + str(oneTime['forceReset']))
+	pnt("test " + str(oneTime['testReset']))
 	isreset = hour == 16 and weekday <= 4 and not oneTime['resetCheck'] #reset at 1600 on weekdays
 	if oneTime['forceReset'] or isreset or oneTime['testReset']:
 		reset()
 		if defconLevel != 2:
 			oneTime['resetCheck'] = True #reset on trade day
 
-	pntDev("Exited mainLoop")
+	pnt("Exited mainLoop")
 	indentNum -= 1
 def tradeParameter(stocksBought, num, shoppingCart, condition, isBottom):
 	global indentNum
 	global stockInfo
 	indentNum += 1
-	pntDev("Entered tradeParameter")
-	pntDev("Condition " + str(condition))
+	pnt("Entered tradeParameter")
+	pnt("Condition " + str(condition))
 	"""
 	Condition: unique code to be run for
 	0 = buy bottom equity
 	1 = buy oldest
 	2 = buy bottom pc
 	3 = buy top pc
-	4 = sell top pc w/ only threshold
+	4 = buy top performer
+	5 = buy bottom performer
+	6 = low confidence
 	"""
 
 	if num == TRADE_PARAM_DISABLED:
-		pntDev("Exited tradeParameter")
+		pnt("Exited tradeParameter")
 		indentNum -= 1
 		return
 
@@ -292,25 +416,25 @@ def tradeParameter(stocksBought, num, shoppingCart, condition, isBottom):
 	isBreak = False
 	while not isBreak:
 		if topNum > numAllCompanies or bottomNum > numAllCompanies:
-			pntDev("Made it to the bottom of the list. no more companies qualify for this parameter")
+			pnt("Made it to the bottom of the list. no more companies qualify for this parameter")
 			break
 		for stock in stockInfo:
 			if len(localBought) >= num:
 				if not isBreak:
-					pntDev("Bought enough stocks")
+					pnt("Bought enough stocks")
 				isBreak = True
 				break
 			if condition == 1:
 				if stockInfo[stock]['daysSinceTrade'] < tradeParams['ageOldestThreshold']:
 					bottomNum += 1
 					topNum += 1
-					pntDev("Not old enough " + stock)
+					pnt("Not old enough " + stock)
 					continue
 			elif condition == 2:
 				if stockInfo[stock]['percentChange'] > tradeParams['pcBottomThreshold']:
 					bottomNum += 1
 					topNum += 1
-					pntDev("PC not below threshold " + stock)
+					pnt("PC not below threshold " + stock)
 					continue
 				if stockInfo[stock]['percentChange'] < -10.0:
 					newShoppingCart += 10
@@ -320,49 +444,57 @@ def tradeParameter(stocksBought, num, shoppingCart, condition, isBottom):
 					newShoppingCart += 5
 				elif stockInfo[stock]['percentChange'] < -3.0: 
 					newShoppingCart += 2
+			if condition == 6:
+				if stockInfo[stock]['order'] != -50: #skip normal stocks
+					pnt("skipped " + stock)
+					continue
 
 			alreadyBought = False
 			for stockb in localBought:
 				if stockb == stock:
-					pntDev("Already bought " + stock)
+					pnt("Already bought " + stock)
 					alreadyBought = True
 			if alreadyBought:
 				continue
-			if stockInfo[stock]['order'] < 0: #ignore LC
-				pntDev(stock + " is LC")
-				continue
-			if stockInfo[stock]['order'] > bottomNum and isBottom: #stay within bounds
-				continue
-			if stockInfo[stock]['order'] < topNum and not isBottom:
-				continue
+			if condition != 6: #lc stocks skip this
+				if stockInfo[stock]['order'] < 0: #ignore LC (may be unneccessary)
+					pnt(stock + " is LC")
+					continue
+				if stockInfo[stock]['order'] > bottomNum and isBottom: #stay within bounds
+					continue
+				if stockInfo[stock]['order'] < topNum and not isBottom:
+					continue
 
-			pntDev(stock + " candidate for trade")
+			pnt(stock + " candidate for trade")
+			pnt(stockInfo[stock])
 
-			if budget['moneyLeftDaily'] >= budget['weeklyBudgetTotal']: #buy more if idle money
+			if budget['moneyLeftDaily'] >= budget['weeklyBudgetTotal'] and condition != 6: #buy more if idle money
 				newShoppingCart += budget['moneyLeftDaily'] * 0.01
-				pntDev("Added $" + str(budget['moneyLeftDaily'] * 0.01) + " to shopping cart because of excess money")
+				pnt("Added $" + str(budget['moneyLeftDaily'] * 0.01) + " to shopping cart because of excess money")
 
 			if checkOrderValid(stock, newShoppingCart, True):
 				number = 0
 				while number != 3:
 					if placeOrder(stock, newShoppingCart, True):
-						pntDev("Success")
+						pnt("Success")
 						stocksBought.append(stock)
 						localBought.append(stock)
 						break
 					else:
 						number += 1
-						#getStockPrices() may be unneccessary
-						pntDev("Retrying " + str(number))
+						newShoppingCart += 0.05
+						pnt("Retrying " + str(number))
 				if number == 3:
-					pntDev("Timed out. Adding stock to bought list to prevent infinite loop")
+					pnt("Timed out. Adding stock to bought list to prevent infinite loop")
 					stocksBought.append(stock)
 					localBought.append(stock)
 			else:
-				pntDev("Invalid order")
+				pnt("Invalid order")
 				isBreak = True
+		topNum += 1
+		bottomNum += 1
 
-	pntDev("Exited tradeParameter")
+	pnt("Exited tradeParameter")
 	indentNum -= 1
 	return stocksBought
 def trade():
@@ -371,13 +503,13 @@ def trade():
 	global budget
 	global tradeParams
 	indentNum += 1
-	pntDev("Entered trade")
+	pnt("Entered trade")
 
 	stocksBought = [] #ensures N number of stocks are bought
 
 	#buy bottom equity
 	sortByParameter('equity')
-	pntDev("buy bottom equity")
+	pnt("buy bottom equity")
 	stocksBought = tradeParameter(
 		stocksBought, 
 		tradeParams['equityBottomNum'], 
@@ -388,7 +520,7 @@ def trade():
 
 	#buy oldest
 	sortByParameter('daysSinceTrade')
-	pntDev("buy oldest")
+	pnt("buy oldest")
 	stocksBought = tradeParameter(
 		stocksBought, 
 		tradeParams['ageOldestNum'], 
@@ -396,18 +528,10 @@ def trade():
 		1, 
 		True,
 	)
-	"""
-	#sell top pc threshold
+
 	sortByParameter('percentChange')
-	pntDev("sell top pc threshold")
-	if tradeParams['pcTopSellThresh'] != TRADE_PARAM_DISABLED:
-		for stock in stockInfo:
-			if stockInfo[stock]['percentChange'] >= tradeParams['pcTopSellThresh']:
-				if checkOrderValid(stock, tradeParams['pcTopSellBudget'], False):
-					placeOrder(stock, tradeParams['pcTopSellBudget'], False)
-	"""
 	#buy bottom pc
-	pntDev("buy bottom pc")
+	pnt("buy bottom pc")
 	stocksBought = tradeParameter(
 		stocksBought, 
 		tradeParams['pcBottomNum'], 
@@ -417,7 +541,7 @@ def trade():
 	)
 
 	#buy top pc
-	pntDev("buy top pc")
+	pnt("buy top pc")
 	stocksBought = tradeParameter(
 		stocksBought, 
 		tradeParams['pcTopNum'], 
@@ -426,20 +550,38 @@ def trade():
 		False,
 	)
 
-	#low confidence
-	pntDev("lc")
-	for stock in stockInfo:
-		if stockInfo[stock]['order'] != -50: #skip normal stocks
-			continue
-		if stockInfo[stock]['lcAmount'] >= 1.0:
-			pntDev(stock + " lcAmount >= $1.00")
-			if checkOrderValid(stock, 1.0, True):
-				placeOrder(stock, 1.0, True)
-		else:
-			pntDev(stock + " lcAmount = $" + str(stockInfo[stock]['lcAmount']))
-	pntDev("No more lc stocks to buy")
+	sortByParameter('performanceNum')
+	#buy top performer
+	pnt("buy top performer")
+	stocksBought = tradeParameter(
+		stocksBought,
+		tradeParams['performanceTopNum'],
+		tradeParams['performanceTopBudget'],
+		4,
+		True,
+	)
 
-	pntDev("Exited trade")
+	#buy bottom performer
+	pnt("buy bottom performer")
+	stocksBought = tradeParameter(
+		stocksBought,
+		tradeParams['performanceBottomNum'],
+		tradeParams['performanceBottomBudget'],
+		5,
+		False,
+	)
+
+	#low confidence
+	pnt("buy low confidence")
+	stocksBought = tradeParameter(
+		stocksBought,
+		numAllCompanies,
+		1.0,
+		6,
+		False,
+	)
+
+	pnt("Exited trade")
 	indentNum -= 1
 def reset():
 	global indentNum
@@ -447,9 +589,9 @@ def reset():
 	global stockInfo
 	global oneTime
 	indentNum += 1
-	pntDev("Entered reset")
+	pnt("Entered reset")
 	
-	pntDev("Resetting oneTime...")
+	pnt("Resetting oneTime...")
 	oneTime['testWeekend'] = False
 	oneTime['testTrade'] = False
 	oneTime['testReset'] = False
@@ -458,80 +600,80 @@ def reset():
 	oneTime['forceReset'] = False
 	oneTime['weekendCheck'] = False
 	oneTime['tradeCheck'] = False
-	pntDev("Reset oneTime")
+	pnt("Reset oneTime")
 
-	pntDev("Verifying integrity of stockInfo")
+	pnt("Verifying integrity of stockInfo")
 	for stock in stockInfo:
 		try:
 			value = stockInfo[stock]['daysSinceTrade']
 			valuea = stockInfo[stock]['lowConfidence']
 			valueb = stockInfo[stock]['lcBudget']
 		except:
-			pntDev(stock + " missing data")
-			getStockPrices()
-	pntDev("Verified integrity of stockInfo")
+			pnt(stock + " missing data")
+			updateStockInfo()
+	pnt("Verified integrity of stockInfo")
 	
-	pntDev("Incrementing daysSinceTrade...")
+	pnt("Incrementing daysSinceTrade...")
 	if defconLevel != 2:
 		for stock in stockInfo:
+			pnt("before" + str(stockInfo[stock]['daysSinceTrade']))
 			stockInfo[stock]['daysSinceTrade'] += 1
+			pnt("after" + str(stockInfo[stock]['daysSinceTrade']))
 	else:		
-		pntDev("daysSinceTrade not incremented")
-	pntDev("Incremented daysSinceTrade")
+		pnt("daysSinceTrade not incremented")
+	pnt("Incremented daysSinceTrade")
 
-	pntDev("Getting brokerage balance...")
+	pnt("Getting brokerage balance...")
 	wait(1)
 	userProf = rs.account.build_user_profile()
 	budget['moneyLeftDaily'] = 0.0
 	budget['brokerage'] = float(userProf['cash'])
 	budget["moneyLeftTotal"] = float(userProf['cash'])
-	pntDev("Got brokerage balance")
+	pnt("Got brokerage balance")
 
-	pntDev("Filling LC stocks...")
+	pnt("Filling LC stocks...")
 	for stock in stockInfo:
 		if not stockInfo[stock]['lowConfidence']:
 			continue
-		if budget['moneyLeftTotal'] > lcAmount:
-			pntDev("Tried to allocate " + str(lcAmount) + " to LC stock")
+		if budget['moneyLeftTotal'] < lcAmount:
+			pnt("Tried to allocate " + str(lcAmount) + " to LC stock")
 			continue
 		if defconLevel != 2:
 			if budget['moneyLeftTotal'] > stockInfo[stock]['lcBudget'] + lcAmount:
 				stockInfo[stock]['lcBudget'] += lcAmount
 				budget['moneyLeftTotal'] -= stockInfo[stock]['lcBudget']
 			else:
-				pntDev("Tried to allocate money to lc stock with insufficient funds")
+				pnt("Tried to allocate money to lc stock with insufficient funds")
 		else:
-			pntDev("Not filled")
-	pntDev("Filled LC stocks")
+			pnt("Not filled")
+	pnt("Filled LC stocks")
 
-	pntDev("Filling moneyLeftDaily with excess...")
+	pnt("Filling moneyLeftDaily with excess...")
 	if budget['moneyLeftTotal'] > budget['monthlyBudgetTotal']:
-		pntDev("Added difference of (moneyLeftTotal-monthlyBudgetTotal) to moneyLeftDaily because of excess money")
+		pnt("Added difference of (moneyLeftTotal-monthlyBudgetTotal) to moneyLeftDaily because of excess money")
 		if defconLevel != 2:
 			value = budget['moneyLeftTotal'] - budget['monthlyBudgetTotal']
 			budget['moneyLeftDaily'] += value
 			budget['moneyLeftTotal'] -= value
 		else:
-			pntDev("I lied")
+			pnt("I lied")
 	else:
-		pntDev("No excess")
-	pntDev("Filled moneyLeftDaily with excess")
+		pnt("No excess")
+	pnt("Filled moneyLeftDaily with excess")
 
-	pntDev("Filling moneyLeftDaily with normal amount")
+	pnt("Filling moneyLeftDaily with normal amount")
 	if budget['moneyLeftTotal'] > budget['dailyBudgetTotal']:
 		if defconLevel != 2:
-			pntDev("moneyLeftDaily refilled with " + str(budget['dailyBudgetTotal']))
-			pntDev("moneyLeftTotal refilled with " + str(budget['dailyBudgetTotal']))
+			pnt("moneyLeftDaily refilled with " + str(budget['dailyBudgetTotal']))
 			budget['moneyLeftDaily'] += budget['dailyBudgetTotal']
 			budget['moneyLeftTotal'] -= budget['dailyBudgetTotal']
 		else:
-			pntDev("moneyLeftDaily refilled with " + str(budget['dailyBudgetTotal']) + " but not really")
-			pntDev("moneyLeftTotal refilled with " + str(budget['dailyBudgetTotal']) + " but not really")
+			pnt("moneyLeftDaily refilled with " + str(budget['dailyBudgetTotal']) + " but not really")
 	else:
 		pnt("Program tried to add $" + str(budget['dailyBudgetTotal']) + " to daily budget with $" + str(budget['moneyLeftTotal']) + " left")
-	pntDev("Filled moneyLeftDaily with normal amount")
+	pnt("Filled moneyLeftDaily with normal amount")
 
-	pntDev("Exited reset")
+	pnt("Exited reset")
 	indentNum -= 1
 		
 #save/load
@@ -541,15 +683,16 @@ def save():
 	global budget
 	global tradeParams
 	global oneTime
+	global devMode
 	indentNum += 1
-	pntDev("Entered save")
+	pnt("Entered save")
 
 	pnt("Saving...")
 	scriptDir = os.path.dirname(__file__)
 	absFilePath = os.path.join(scriptDir, "savedLogin.txt")
 	with open(absFilePath, "w") as fp:
 		json.dump(accountInfo, fp)
-		pntDev("Saved savedLogin.txt")
+		pnt("Saved savedLogin.txt")
 
 	jsonData = {
 		'VERSION_NUMBER': VERSION_NUMBER,
@@ -557,12 +700,32 @@ def save():
 		'budget': budget,
 		'tradeParams': tradeParams,
 		'oneTime': oneTime,
+		'devMode': devMode,
 	}
 	with open(os.path.join(scriptDir, "data.txt"), "w") as fp:
 		json.dump(jsonData, fp)
-		pntDev("Saved data.txt")
-	pntDev("Exited save")
+		pnt("Saved data.txt")
+	pnt("Exited save")
 	indentNum -= 1
+def loadVariable(blank, new): #fills blank with new only if the key exists in blank
+	global indentNum
+	indentNum += 1
+	pnt("Entered loadVariable")
+	retVal = {}
+	for oldKey in blank.keys():
+		found = False
+		for newKey in new.keys():
+			if oldKey == newKey:
+				pnt("Found key " + str(newKey))
+				found = True
+				retVal[newKey] = new[newKey] #add to variable
+		if not found:
+			pnt("key " + str(newKey) + " not found")
+			pnt("adding stock variable with ->" + str(blank[oldKey]) + "<- value")
+			retVal[oldKey] = blank[oldKey]
+	pnt("Exited loadVariable")
+	indentNum -= 1
+	return retVal
 def load(): #calls setup and returns if error
 	global indentNum
 	global accountInfo
@@ -571,20 +734,21 @@ def load(): #calls setup and returns if error
 	global budget
 	global tradeParams
 	global numAllCompanies
+	global devMode
 	indentNum += 1
-	pntDev("Entered load")
+	pnt("Entered load")
 
 	try:
 		scriptDir = os.path.dirname(__file__)
 		relPath = "savedLogin.txt"
 		absFilePath = os.path.join(scriptDir, relPath)
 		with open(absFilePath, "r") as fp:
-			accountInfo = json.load(fp)
-			pntDev("Loaded savedLogin.txt")
+			accountInfo = loadVariable(accountInfo, json.load(fp))
+			pnt("Loaded savedLogin.txt")
 	except:
 		pnt("Failed to load savedLogin.txt. Either file doesn't exist, or incorrect user/pass")
 		setup(1)
-		pntDev("Exited load with savedLogin.txt error")
+		pnt("Exited load with savedLogin.txt error")
 		indentNum -= 1
 		raise ValueError("Failed to load savedLogin.txt. Either file doesn't exist, or incorrect user/pass")
 
@@ -593,11 +757,11 @@ def load(): #calls setup and returns if error
 		scriptDir = os.path.dirname(__file__)
 		with open(os.path.join(scriptDir, "data.txt"), "r") as fp:
 			jsonData = json.load(fp)
-			pntDev("Loaded data.txt")
+			pnt("Loaded data.txt")
 	except:
 		pnt("Failed to load data.txt")
 		setup(2)
-		pntDev("Exited load with data.txt error")
+		pnt("Exited load with data.txt error")
 		indentNum -= 1
 		raise ValueError("Failed to load data.txt")
 
@@ -608,27 +772,32 @@ def load(): #calls setup and returns if error
 	try:
 		stockInfo = jsonData['stockInfo']
 	except:
-		pntDev("Error loading stockInfo. Recommend deleting data.txt and re-running program manually")
+		pnt("Error loading stockInfo. Recommend deleting data.txt and re-running program manually")
 		stop()
 	try:
-		budget = jsonData['budget']
+		budget = loadVariable(budget, jsonData['budget'])
 	except:
-		pntDev("Error loading budget. Recommend deleting data.txt and re-running program manually")
+		pnt("Error loading budget. Recommend deleting data.txt and re-running program manually")
 		stop()
 	try:
-		tradeParams = jsonData['tradeParams']
+		tradeParams = loadVariable(tradeParams, jsonData['tradeParams'])
 	except:
-		pntDev("Error loading tradeParams. Recommend deleting data.txt and re-running program manually")
+		pnt("Error loading tradeParams. Recommend deleting data.txt and re-running program manually")
 		stop()
 	try:
-		oneTime = jsonData['oneTime']
+		oneTime = loadVariable(oneTime, jsonData['oneTime'])
 	except:
-		pntDev("Error loading oneTime. Recommend deleting data.txt and re-running program manually")
+		pnt("Error loading oneTime. Recommend deleting data.txt and re-running program manually")
+		stop()
+	try:
+		devMode = jsonData['devMode']
+	except:
+		pnt("Error loading devMode. Recommend deleting data.txt and re-running program manually")
 		stop()
 	
 	numAllCompanies = len(stockInfo)
 	
-	pntDev("Exited load")
+	pnt("Exited load")
 	indentNum -= 1
 
 #setup
@@ -637,71 +806,79 @@ def propagateDevPrefs():
 	global stockInfo
 	global budget
 	global tradeParams
-	global skipSetup
+	global loadedDevPrefs
+	global devMode
 	indentNum += 1
-	pntDev("Entered propagateDevPrefs")
+	pnt("Entered propagateDevPrefs")
 
-	pntDev("Developer prefs loading...")
+	devMode = True
+	pnt("Developer prefs loading...")
 	pnt("Good morning, petty officer")
 
-	pntDev("Loading stocks")
+	pnt("Loading stocks")
 	stockInfo = {}
 	for stock in stockList:
-		stockInfo[stock] = {}
+		stockInfo[stock] = {} #TODO dont wipe if exists
 		stockInfo[stock]['isCrypto'] = False
+		stockInfo[stock]['lowConfidence'] = False
 	for crypto in cryptoList:
 		stockInfo[crypto] = {}
 		stockInfo[crypto]['isCrypto'] = True
-		
-	stockInfo['AMCX']['lowConfidence'] = True
-	stockInfo['GME']['lowConfidence'] = True
-	pntDev("Loaded stocks")
+		stockInfo[stock]['lowConfidence'] = False
+	for stock in lcList:
+		stockInfo[stock] = {}
+		stockInfo[stock]['lowConfidence'] = True
+	pnt("Loaded stocks")
 
-	pntDev("Setting budget")
+	pnt("Setting budget")
 	budget['monthlyBudgetTotal'] = 525.0
 	budget['weeklyBudgetTotal'] = 0.0
 	budget['dailyBudgetTotal'] = 0.0
 	budget['dailyBudgetPerStock'] = 0.0
 	budget['weeklyBudgetPerStock'] = 0.0
 	try:
-		value = budget['moneyLeftDaily']
-		value = budget['moneyLeftTotal']
+		budget['moneyLeftDaily'] = 0.0
+		budget['moneyLeftTotal'] = 0.0
 	except:
 		budget['moneyLeftDaily'] = 0.0
 		budget['moneyLeftTotal'] = 0.0
 	budget = calculateBudget(budget)
 	financesSplash()
-	pntDev("Set budget")
+	pnt("Set budget")
 
-	pntDev("Loading trade params")
-	tradeParams = {}
-	tradeParams['pcBottomThreshold'] = -0.5
-	tradeParams['pcBottomNum'] = 4
-	tradeParams['pcBottomBudget'] = 1.0
-	tradeParams['pcTopNum'] = 3
-	tradeParams['pcTopBudget'] = 1.0
-	tradeParams['equityBottomNum'] = 5
-	tradeParams['equityBottomBudget'] = 1.0
-	tradeParams['ageOldestNum'] = 3
-	tradeParams['ageOldestThreshold'] = 7
-	tradeParams['ageOldestBudget'] = 1.0
-	tradeParams['pcTopSellThresh'] = 4.5
-	tradeParams['pcTopSellBudget'] = 1.0
-	pntDev("Loaded trade params")
+	pnt("Loading trade params")
+	tradeParams = {
+		"pcBottomThreshold": -0.5,
+		"pcBottomNum": 4,
+		"pcBottomBudget": 1.0,
+		"pcTopNum": 3,
+		"pcTopBudget": 1.0,
+		"equityBottomNum": 5,
+		"equityBottomBudget": 1.0,
+		"ageOldestNum": 3,
+		"ageOldestThreshold": 7,
+		"ageOldestBudget": 1.0,
+		"performanceDays": 21,
+		"performanceTopNum": 3,
+		"performanceTopBudget": 1.0,
+		"performanceBottomNum": 1,
+		"performanceBottomBudget": 1.0,
+	}
+	pnt("Loaded trade params")
 
 	calculateRemainingBudget()
-	skipSetup = True
-	pntDev("Exited propagateDevPrefs")
+	loadedDevPrefs = True
+	pnt("Exited propagateDevPrefs")
 	indentNum -= 1
 	return 5 #exit
 def setupMainMenu(errorCode):
 	global indentNum
 	indentNum += 1
-	pntDev("Entered mainMenu")
+	pnt("Entered mainMenu")
 	if errorCode != 0:
-		pntDev("Error code " + str(errorCode))
+		pnt("Error code " + str(errorCode))
 	if errorCode == 1:
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return 4 #go to account
 
@@ -714,37 +891,37 @@ def setupMainMenu(errorCode):
 	pnt("5 - Exit")
 	selection = getInput()
 	if selection == "1":
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return 1
 	elif selection == "2":
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return 2
 	elif selection == "3":
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return 3
 	elif selection == "4":
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return 4
 	elif selection == "5":
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return 5
 	elif selection == "secret":
-		pntDev("Exited mainMenu")
+		pnt("Exited mainMenu")
 		indentNum -= 1
 		return propagateDevPrefs()
-	pntDev("Exited mainMenu")
+	pnt("Exited mainMenu")
 	indentNum -= 1
 def setupStocks(errorCode):
 	global indentNum
 	global stockInfo
 	global numAllCompanies
 	indentNum += 1
-	pntDev("Entered setupStocks")
+	pnt("Entered setupStocks")
 	pnt("What stocks do you want to invest in?")
 	pnt("Type the ticker name for each stock one at a time. (Eg: NVDA)")
 	pnt("0 - Finished")
@@ -765,30 +942,29 @@ def setupStocks(errorCode):
 
 	inputStocks = True
 	while True:
-		pntDev("Restarted stock input while True loop")
 		if inputStocks:
 			pnt("Accepting stocks. Do NOT input crypto")
 		else:
 			pnt("Accepting cryptocurrencies. Do NOT input stocks")
 		selection = getInput()
 		if selection == "1":
-			pntDev("Swapped between crypto/stocks")
+			pnt("Swapped between crypto/stocks")
 			inputStocks = not inputStocks
 		elif selection == "2":
-			pntDev("Stock removed")
+			pnt("Stock removed")
 			stockInfo.popitem()
 			pnt("\nStocks")
-			pntDev("Exited setupStocks")
+			pnt("Exited setupStocks")
 			indentNum -= 1
 			return 1 #restart
 		elif selection == "3":
-			pntDev("All stocks removed")
+			pnt("All stocks removed")
 			stockInfo.clear()
-			pntDev("Exited setupStocks")
+			pnt("Exited setupStocks")
 			indentNum -= 1
 			return 1
 		elif selection == "4":
-			pntDev("Editing low confidence mode")
+			pnt("Editing low confidence mode")
 			pnt("Low confidence mode keeps a budget for each stock with this enabled")
 			try:
 				pnt("Every weekday, it will add $" + str(lcAmount) + " to the budgets of each stock. This should be <$0.15")
@@ -800,7 +976,7 @@ def setupStocks(errorCode):
 
 		elif selection == "0":
 			if len(stockInfo) > 0:
-				pntDev("Broke stock input while True loop 2")
+				pnt("Broke stock input while True loop 2")
 				break
 			else:
 				pnt("Add a stock first, guy")
@@ -813,7 +989,7 @@ def setupStocks(errorCode):
 			if len(stockInfo) > 0:
 				if errorCode == 2 or errorCode == 3:
 					pnt("You can't exit to the main menu. data.txt couldn't be loaded, so repopulate the shit")
-				pntDev("Exited setupStocks")
+				pnt("Exited setupStocks")
 				indentNum -= 1
 				return 0
 			else:
@@ -822,16 +998,16 @@ def setupStocks(errorCode):
 			numbera = propagateDevPrefs()
 			save()
 
-			pntDev("Exited setupStocks")
+			pnt("Exited setupStocks")
 			indentNum -= 1
 			return -1
 		else:
 			stockInfo[selection] = {}
 			if inputStocks:
-				pntDev("Stock " + selection + " added")
+				pnt("Stock " + selection + " added")
 				stockInfo[selection]['isCrypto'] = False
 			else:
-				pntDev("Crypto " + selection + " added")
+				pnt("Crypto " + selection + " added")
 				stockInfo[selection]['isCrypto'] = True
 
 			pnt("Do you have low confidence in this stock?")
@@ -844,14 +1020,14 @@ def setupStocks(errorCode):
 				pnt("Low confidence disabled for " + selection)
 				stockInfo[selection]['lowConfidence'] = False
 	numAllCompanies = len(stockInfo)
-	pntDev("Exited setupStocks")
+	pnt("Exited setupStocks")
 	indentNum -= 1
 	return 0
 def setupBudget(errorCode):
 	global indentNum
 	global budget
 	indentNum += 1
-	pntDev("Entered setupBudget")
+	pnt("Entered setupBudget")
 
 	while True:
 		pnt("How would you like to define a budget?")
@@ -869,12 +1045,12 @@ def setupBudget(errorCode):
 			if errorCode == 4:
 				pnt("Fuck off. I got an error loading the fucking budget, so put your data in again and stop complaining")
 			else:
-				pntDev("Exited setupBudget")
+				pnt("Exited setupBudget")
 				indentNum -= 1
 				return 0
 		if selection != "6" and selection != "99":
 			pnt("Reset budget values")
-			pntDev("Reset budget values")
+			pnt("Reset budget values")
 			budget['monthlyBudgetTotal'] = 0.0
 			budget['weeklyBudgetTotal'] = 0.0
 			budget['dailyBudgetTotal'] = 0.0
@@ -885,7 +1061,7 @@ def setupBudget(errorCode):
 				value = budget['moneyLeftTotal']
 			except:
 				pnt("Reset moneyLeftDaily and moneyLeftTotal")
-				pntDev("Reset moneyLeftDaily and moneyLeftTotal")
+				pnt("Reset moneyLeftDaily and moneyLeftTotal")
 				budget['moneyLeftDaily'] = 0.0
 				budget['moneyLeftTotal'] = 0.0
 			pnt("With how much money?")
@@ -905,12 +1081,12 @@ def setupBudget(errorCode):
 			pnt("Editing dailyBudgetPerStock")
 			budget['dailyBudgetPerStock'] = float(getInput())
 		elif selection == "6":
-			pntDev("Editing moneyLeftTotal")
+			pnt("Editing moneyLeftTotal")
 			pnt("How much money is currently in your Robinhood brokerage? (This money must not go down except by action of this program, otherwise it will attempt to spend money that doesn't exist)")
 			pnt("This program assumes deposits are made on the 1st of the month. If you don't want to wait until then, fill this out. Otherwise, put 0")
 			
 			budget['moneyLeftTotal'] = float(getInput())
-			pntDev("Reset moneyLeftDaily")
+			pnt("Reset moneyLeftDaily")
 			pnt("Reset balance for tomorrow")
 			budget['moneyLeftDaily'] = 0.0
 			
@@ -920,20 +1096,20 @@ def setupBudget(errorCode):
 		elif selection == "99":
 			budget = calculateBudget(budget)
 			if errorCode == 4:
-				pntDev("Exited setupBudget")
+				pnt("Exited setupBudget")
 				indentNum -= 1
 				return 5
 			else:
-				pntDev("Exited setupBudget")
+				pnt("Exited setupBudget")
 				indentNum -= 1
 				return 0
 		else:
-			pntDev("Invalid input, dumbass")	
+			pnt("Invalid input, dumbass")	
 def setupTradeParams(errorCode):
 	global indentNum
 	global budget
 	indentNum += 1
-	pntDev("Entered tradeParams")
+	pnt("Entered tradeParams")
 	
 	monthlyRemaining = budget['monthlyBudgetTotal']
 	weeklyRemaining = budget['weeklyBudgetTotal']
@@ -945,7 +1121,6 @@ def setupTradeParams(errorCode):
 			pnt("Sorted by percent change:")
 			pnt("1 - Buy greatest NEGATIVE percent change: " + str(tradeParams['pcBottomNum']) + "/$" + str(tradeParams['pcBottomBudget']) + ", " + str(tradeParams['pcBottomThreshold']) + "% Threshold")
 			pnt("2 - Buy greatest POSITIVE percent change: " + str(tradeParams['pcTopNum']) + "/$" + str(tradeParams['pcTopBudget']))
-			pnt("3 - Sell N dollars at positive percent change threshold: $" + str(tradeParams['pcTopSellBudget']) + ", " + str(tradeParams['pcTopSellThresh']) + "% Threshold")
 			pnt("Sorted by equity:")
 			pnt("4 - Buy lowest equity: " + str(tradeParams['equityBottomNum']) + "/$" + str(tradeParams['equityBottomBudget']))
 			pnt("Sorted by age:")
@@ -954,7 +1129,6 @@ def setupTradeParams(errorCode):
 			pnt("Sorted by percent change:")
 			pnt("1 - Buy greatest NEGATIVE percent change")
 			pnt("2 - Buy greatest POSITIVE percent change")
-			pnt("3 - Sell N dollars at positive percent change threshold")
 			pnt("Sorted by equity:")
 			pnt("4 - Buy lowest equity")
 			pnt("Sorted by age:")
@@ -967,8 +1141,6 @@ def setupTradeParams(errorCode):
 			tradeParams['pcBottomThreshold'] = 0.0
 			tradeParams['pcTopNum'] = 0
 			tradeParams['pcTopBudget'] = 0.0
-			tradeParams['pcTopSellThresh'] = 0.0
-			tradeParams['pcTopSellBudget'] = 0.0
 			tradeParams['equityBottomNum'] = 0
 			tradeParams['equityBottomBudget'] = 0.0
 			tradeParams['ageOldestNum'] = 0
@@ -978,7 +1150,7 @@ def setupTradeParams(errorCode):
 			pnt("99 - Return to main menu")
 		selection = getInput()
 		if selection == "99":
-			pntDev("Editing 99")
+			pnt("Editing 99")
 			#error checking
 			allVals = 0
 			value = 0
@@ -1003,16 +1175,6 @@ def setupTradeParams(errorCode):
 				allVals += 1
 			if value != 0 and value != 2:
 				pnt("Hey guy, not all values associated with 'Buy greatest POSITIVE percent change' are enabled/disabled")
-				continue
-			value = 0
-			if tradeParams['pcTopSellThresh'] == TRADE_PARAM_DISABLED:
-				value += 1
-				allVals += 1
-			if tradeParams['pcTopSellBudget'] == TRADE_PARAM_DISABLED:
-				value += 1
-				allVals += 1
-			if value != 0 and value != 2:
-				pnt("Hey guy, not all values associated with 'Sell N dollars at positive percent change threshold' are enabled/disabled")
 				continue
 			value = 0
 			if tradeParams['equityBottomNum'] == TRADE_PARAM_DISABLED:
@@ -1042,15 +1204,15 @@ def setupTradeParams(errorCode):
 				pnt("What the actual fuck. Do you even realize that you have set EVERY parameter to be turned off? Just delete this program from your fucking VPS and save youself 4 bucks a goddamn month")
 			else:
 				if errorCode == 5:
-					pntDev("Exited tradeParams")
+					pnt("Exited tradeParams")
 					indentNum -= 1
 					return 5
 				else:
-					pntDev("Exited tradeParams")
+					pnt("Exited tradeParams")
 					indentNum -= 1
 					return 0
 		elif selection == "1":
-			pntDev("Editing 1")
+			pnt("Editing 1")
 			calculateRemainingBudget()
 			pnt("When sorted by percent change, how many stocks do you want to buy from? Starting from the greatest negative percent change")
 			tradeParams['pcBottomNum'] = int(getInput())
@@ -1059,28 +1221,21 @@ def setupTradeParams(errorCode):
 			pnt("At what negative percent change or greater do you want to buy? Enter a negative number")
 			tradeParams['pcBottomThreshold'] = float(getInput())
 		elif selection == "2":
-			pntDev("Editing 2")
+			pnt("Editing 2")
 			calculateRemainingBudget()
 			pnt("When sorted by percent change, how many stocks do you want to buy from? Starting from the greatest positive percent change")
 			tradeParams['pcTopNum'] = int(getInput())
 			pnt("How much money do you want to invest into the " + str(tradeParams['pcTopNum']) + " stocks EACH? (Minimum $1.00)")
 			tradeParams['pcTopBudget'] = float(getInput())
-		elif selection == "3":
-			pntDev("Editing 3")
-			calculateRemainingBudget()
-			pnt("At what positive percent change or greater do you want to trigger a sell?")
-			tradeParams['pcTopSellThresh'] = float(getInput())
-			pnt("How much, in dollars, of each stock do you want to sell?")
-			tradeParams['pcTopSellBudget'] = float(getInput())
 		elif selection == "4":
-			pntDev("Editing 4")
+			pnt("Editing 4")
 			calculateRemainingBudget()
 			pnt("When sorted by equity, how many stocks do you want to buy from? Starting from the lowest amount")
 			tradeParams['equityBottomNum'] = int(getInput())
 			pnt("How much money do you want to invest into the " + str(tradeParams['equityBottomBudget']) + " stocks EACH? (Minimum $1.00)")
 			tradeParams['equityBottomBudget'] = float(getInput())
 		elif selection == "5":
-			pntDev("Editing 5")
+			pnt("Editing 5")
 			calculateRemainingBudget()
 			pnt("When sorted by last bought, how many stocks do you want to buy? Starting from the oldest trade. These stocks have not been bought the longest")
 			tradeParams['ageOldestNum'] = int(getInput())
@@ -1095,7 +1250,7 @@ def setupAccount(errorCode):
 	global indentNum
 	global accountInfo
 	indentNum += 1
-	pntDev("Entered setupAccount")
+	pnt("Entered setupAccount")
 	selection = "0"
 	if errorCode == 1 or errorCode == 6:
 		selection = "1"
@@ -1114,7 +1269,7 @@ def setupAccount(errorCode):
 			if errorCode == 1:
 				selection = "2"
 			elif errorCode == 6:
-				pntDev("Exited setupAccount")
+				pnt("Exited setupAccount")
 				indentNum -= 1
 				return 5
 		elif selection == "2":
@@ -1130,14 +1285,14 @@ def setupAccount(errorCode):
 			elif selection == "n":
 				pass
 			if errorCode == 1:
-				pntDev("Exited setupAccount")
+				pnt("Exited setupAccount")
 				indentNum -= 1
 				return 5
 		elif selection == "99":
 			indentNum -= 1
-			pntDev("Exited setupAccount")
+			pnt("Exited setupAccount")
 			return 0
-	pntDev("Exited setupAccount")
+	pnt("Exited setupAccount")
 	indentNum -= 1
 	return 0
 def setup(errorCode):
@@ -1153,15 +1308,15 @@ def setup(errorCode):
 	5 - load tradeParams failed
 	6 - invalid login
 	"""
-	pntDev("Entered setup")
-	pntDev("Error code: " + str(errorCode))
+	pnt("Entered setup")
+	pnt("Error code: " + str(errorCode))
 	number = 0
 	if errorCode == 1:
 		number = setupAccount(errorCode)
 	elif errorCode == 2:
 		number = setupStocks(errorCode)
 		if number == -1: #dev prefs selected
-			pntDev("Exited setup")
+			pnt("Exited setup")
 			indentNum -= 1
 			return
 		number = setupBudget(errorCode)
@@ -1194,7 +1349,7 @@ def setup(errorCode):
 		#done
 		elif number == 5:
 			save()
-			pntDev("Exited setup")
+			pnt("Exited setup")
 			indentNum -= 1
 			return
 
@@ -1210,40 +1365,30 @@ def pntMajorAction(string): #prints sparknotes of what program does when it's ac
 	pnt(string)
 
 	filesize = os.path.getsize(os.path.join(scriptDir, "Summary.txt"))
-	if filesize >= 3000000000: # 3 gigabytes
+	if filesize >= 5000000: # 5 megabytes
 		print("File size excessive. deleted Summary.txt")
-		os.remove(os.path.join(scriptDir, "Summary.txt"))
+		#stop()
+		#os.remove(os.path.join(scriptDir, "Summary.txt"))
 def pnt(string): #prints to terminal and log file
 	scriptDir = os.path.dirname(__file__)
-	file = open(os.path.join(scriptDir, "Log.txt"), "a")
+	file = open(os.path.join(scriptDir, "log.txt"), "a")
 	if string == "":
 		file.write("\n")
 	else:
 		file.write(getTime() + (" " * indentNum*2) + str(string) + "\n")
 	file.close()
-	print(string)
+	print(getTime() + (" " * indentNum*2) + str(string))
 
-	filesize = os.path.getsize(os.path.join(scriptDir, "Log.txt"))
-	if filesize >= 3000000000: # 3 gigabytes
-		print("File size excessive. deleted Log.txt")
-		os.remove(os.path.join(scriptDir, "Log.txt"))
-def pntDev(string): #prints to developer log file
-	scriptDir = os.path.dirname(__file__)
-	file = open(os.path.join(scriptDir, "Dev.txt"), "a")
-	if string == "":
-		file.write("\n")
-	else:
-		file.write(getTime() + (" " * indentNum*2) + str(string) + "\n")
-	file.close()
-
-	filesize = os.path.getsize(os.path.join(scriptDir, "Dev.txt"))
-	if filesize >= 3000000000: # 3 gigabytes
-		print("File size excessive. deleted Dev.txt")
-		os.remove(os.path.join(scriptDir, "Dev.txt"))
+	filesize = os.path.getsize(os.path.join(scriptDir, "log.txt"))
+	if filesize >= 5000000: # 5 megabyte
+		pnt("File size excessive. stopping execution")
+		#stop()
+		#os.remove(os.path.join(scriptDir, "log.txt"))
+		#print("File size excessive. deleted log.txt")
 def calculateRemainingBudget(): 
 	global indentNum
 	indentNum += 1
-	pntDev("Entered calculateRemainingBudget")
+	pnt("Entered calculateRemainingBudget")
 	
 	monthlyRemaining = budget['monthlyBudgetTotal']
 	weeklyRemaining = budget['weeklyBudgetTotal']
@@ -1269,20 +1414,20 @@ def calculateRemainingBudget():
 	pnt("Weekly: $" + str(format(weeklyRemaining, '.2f')))
 	pnt("Daily: $" + str(format(dailyRemaining, '.2f')))
 
-	pntDev("Exited calculateRemainingBudget")
+	pnt("Exited calculateRemainingBudget")
 	indentNum -= 1
 def financesSplash():
 	global indentNum
 	global budget
 	indentNum += 1
-	pntDev("Entered financesSplash")
+	pnt("Entered financesSplash")
 	pnt("Yearly payments to brokerage: $" + str(format(budget['monthlyBudgetTotal']*12, '.2f')))
 	pnt("Monthly payments to brokerage: $" + str(format(budget['monthlyBudgetTotal'], '.2f')))
 	pnt("Weekly budget total: $" + str(budget['weeklyBudgetTotal']))
 	pnt("Weekly budget per stock: $" + str(budget['weeklyBudgetPerStock']))
 	pnt("Daily budget total: $" + str(budget['dailyBudgetTotal']) + " (Excluding weekends)")
 	pnt("Daily budget per stock: $" + str(budget['dailyBudgetPerStock']) + " (Excluding weekends)")
-	pntDev("Exited financesSplash")
+	pnt("Exited financesSplash")
 	indentNum -= 1
 
 #helper
@@ -1290,10 +1435,17 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 	global indentNum
 	global budget
 	indentNum += 1
-	pntDev("Entered placeOrder")
+	pnt("Entered placeOrder")
 
 	pnt(stock + " " + str(format(stockInfo[stock]['percentChange'], '.3f')) + "%" + " Remaining: $" + str(budget['moneyLeftDaily']) + "/$" + str(budget['moneyLeftTotal']))
-	pntDev(stock + " " + str(format(stockInfo[stock]['percentChange'], '.3f')) + "%" + " Remaining: $" + str(budget['moneyLeftDaily']) + "/$" + str(budget['moneyLeftTotal']))
+	
+	hour = datetime.now().hour #markets closed anyway
+	minute = datetime.now().minute
+	if hour >= 16 or (hour < 9 and minute < 30):
+		pnt("markets closed")
+		pnt("Exited placeOrder")
+		indentNum -= 1
+		return True
 
 	wait(1)
 	userProf = rs.account.build_user_profile()
@@ -1307,8 +1459,7 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 				rs.orders.order_buy_fractional_by_price(stock, shoppingCart)
 		else:
 			pnt("Didn't buy shit")
-		pntMajorAction(stock + " bought for $" + str(shoppingCart))
-		pntDev(stock + " bought for $" + str(shoppingCart))
+		pnt(stock + " bought for $" + str(shoppingCart))
 	else:
 		if defconLevel == 0:
 			if stockInfo[stock]['isCrypto']:
@@ -1317,9 +1468,12 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 				rs.orders.order_sell_fractional_by_price(stock, shoppingCart)
 		else:
 			pnt("Didn't sell shit")
-		pntMajorAction(stock + " sold for $" + str(shoppingCart))
-		pntDev(stock + " sold for $" + str(shoppingCart))
+		pnt(stock + " sold for $" + str(shoppingCart))
 
+	if defconLevel == 2:
+		pnt("Exited placeOrder")
+		indentNum -= 1
+		return True
 	wait(30)
 	newUserProf = rs.account.build_user_profile()
 	newBrokerage = float(newUserProf['cash'])
@@ -1327,22 +1481,22 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 	if oldBrokerage == newBrokerage: #fail
 		if defconLevel != 0:
 			pnt("No way to tell if trade failed or succeeded")
-			pntDev("Exited placeOrder")
+			pnt("Exited placeOrder")
 			indentNum -= 1
 			return True
 		else:
-			pntDev("Trade failed " + stock + " $" + str(shoppingCart))
-			pntMajorAction("Trade failed " + stock + " $" + str(shoppingCart))
-			orders = rs.orders.get_all_open_stock_orders() #WIP cancel all pending orders if fail
-			pntDev(orders)
-			pntDev("Exited placeOrder")
+			pnt("Trade failed " + stock + " $" + str(shoppingCart))
+			orders = rs.orders.get_all_open_stock_orders()
+			info = rs.orders.cancel_stock_order(orders[0]['id'])
+			pnt("Exited placeOrder")
 			indentNum -= 1
 			return False
-			
+
 	else: #success
 		if buy:
 			if defconLevel != 2:
 				stockInfo[stock]['daysSinceTrade'] = 0
+				pnt(stock + " to " + str(stockInfo[stock]['daysSinceTrade']))
 				if stockInfo[stock]['lowConfidence']:
 					stockInfo[stock]['lcBudget'] -= shoppingCart
 				else:
@@ -1352,6 +1506,7 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 		else:
 			if defconLevel != 2:
 				stockInfo[stock]['daysSinceTrade'] = 0
+				pnt(stock + " to " + str(stockInfo[stock]['daysSinceTrade']))
 				if stockInfo[stock]['lowConfidence']:
 					stockInfo[stock]['lcBudget'] += shoppingCart
 				else:
@@ -1359,61 +1514,68 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 			else:
 				pnt("Didn't add shit")
 
-		pntDev("Exited placeOrder")
+		pnt("Exited placeOrder")
 		indentNum -= 1
 		return True
 def checkOrderValid(stock, shoppingCart, buy): #returns true if should buy/sell
 	global indentNum
 	indentNum += 1
-	pntDev("Entered checkOrderValid")
+	pnt("Entered checkOrderValid")
+
+	money = 0.0
+	if stockInfo[stock]['lowConfidence']:
+		money = stockInfo[stock]['lcBudget']
+	else:
+		money = budget['moneyLeftDaily']
 
 	if buy:
-		if budget['moneyLeftDaily'] < 1.0:
-			pntDev("Not enough money $" + str(budget['moneyLeftDaily']))
-			pntDev("Exited checkOrderValid")
+		if money < 1.0:
+			pnt("Not enough money $" + str(money))
+			pnt("Exited checkOrderValid")
 			indentNum -= 1
 			return False
 
 		loweredPrice = False #if wanting to buy too much, lower price
-		while shoppingCart > budget['moneyLeftDaily'] and budget['moneyLeftDaily'] > 1.0:
+		while shoppingCart > money and money > 1.0:
 			shoppingCart -= 0.01
 			loweredPrice = True
 		if loweredPrice:
-			pntDev("Insufficient funds initially. Shopping cart lowered to $" + str(shoppingCart))
+			pnt("Insufficient funds initially. Shopping cart lowered to $" + str(shoppingCart))
 			pnt("Insufficient funds initially. Shopping cart lowered to $" + str(shoppingCart))
 
-		pntDev("Valid buy")
+		pnt("Valid buy")
 
-		pntDev("Exited checkOrderValid")
+		pnt("Exited checkOrderValid")
 		indentNum -= 1
 		return True
 	else:
 		if stockInfo[stock]['equity'] < shoppingCart:
-			pntDev("Insufficient equity to sell")
+			pnt("Insufficient equity to sell")
 			pnt("ATTEMPTED TO SELL $" + str(shoppingCart) + " OF " + stock + ". INSUFFICIENT EQUITY")
-			pntDev("Exited checkOrderValid")
+			pnt("Exited checkOrderValid")
 			indentNum -= 1
 			return False
 
-		pntDev("Valid sell")
+		pnt("Valid sell")
 
-		pntDev("Exited checkOrderValid")
+		pnt("Exited checkOrderValid")
 		indentNum -= 1
 		return True
-def getStockPrices(): #puts new data in stockInfo
+def updateStockInfo(): #puts new data in stockInfo
 	global indentNum
 	global stockInfo
 	indentNum += 1
-	pntDev("Entered getStockPrices")
+	pnt("Entered updateStockInfo")
 
 	pnt("Getting prices...")
 	wait(1)
 	dictionary = rs.account.build_holdings(with_dividends=True)
 	wait(1)
 	cryptoDict = rs.crypto.get_crypto_positions()
-	pntDev("Got dictionary")
+	pnt("Got dictionary")
 	order = 0
 	for stock in stockInfo:
+		pnt(stock)
 		information = {
 			"isCrypto": False,
 			"price": 0.0,
@@ -1424,12 +1586,16 @@ def getStockPrices(): #puts new data in stockInfo
 			"lowConfidence": False,
 			"lcBudget": 0.0,
 			"order": 0,
+			"performance": [1] * tradeParams['performanceDays'],
+			"performanceNum": 0, #numerical value of performance combined
 		}
-		information['isCrypto'] = stockInfo[stock]['isCrypto']
-		information['price'] = 0.0
-		information['equity'] = 0.0
-		information['percentChange'] = 0.0
 		information['order'] = order
+		try:
+			information['isCrypto'] = stockInfo[stock]['isCrypto']
+		except Exception as e:
+			pnt("couldnt find isCrypto. assuming false")
+			pnt(e)
+			information['isCrypto'] = False
 
 		if stockInfo[stock]['isCrypto']:
 			wait(1)
@@ -1439,14 +1605,23 @@ def getStockPrices(): #puts new data in stockInfo
 				if item['currency']['code'] == stock:
 					information['equity'] = float(item['quantity']) * information['price']
 		else:
-			info = dictionary[stock]
-			information['price'] = float(info['price'])
-			information['equity'] = float(info['equity'])
+			try:
+				info = dictionary[stock]
+				information['price'] = float(info['price'])
+			except:
+				pnt("couldnt get price")
+				wait(1)
+				information['price'] = float(rs.stocks.get_quotes([stock], 'last_trade_price')[0])
+			try:
+				info = dictionary[stock]
+				information['equity'] = float(info['equity'])
+			except:
+				pnt("couldnt find equity for " + stock + " assuming 0")
+				information['equity'] = 0.0
 		
 		try:
 			information['lastPrice'] = stockInfo[stock]['price']
 		except:
-			pntDev("Last price not found for " + stock)
 			pnt("Last price not found for " + stock)
 			information['lastPrice'] = information['price']
 
@@ -1461,62 +1636,83 @@ def getStockPrices(): #puts new data in stockInfo
 		information['percentChange'] = float(format(information['percentChange'], '.3f'))
 		
 		try:
-			avalue = stockInfo[stock]['daysSinceTrade']
+			information['daysSinceTrade'] = stockInfo[stock]['daysSinceTrade']
+			pnt("dayssincetrade updated to " + str(stockInfo[stock]['daysSinceTrade']))
 		except:
-			pntDev("daysSinceTrade for " + stock + " does not exist. Resetting to default value")
 			pnt("daysSinceTrade for " + stock + " does not exist. Resetting to default value")
 			information['daysSinceTrade'] = 0
 
 		try:
-			aval = stockInfo[stock]['lowConfidence']
+			information['lowConfidence'] = stockInfo[stock]['lowConfidence']
 		except:
-			pntDev("lowConfidence not found for " + stock + ". Assuming FALSE")
 			pnt("lowConfidence not found for " + stock + ". Assuming FALSE")
 			information['lowConfidence'] = False
 
+		try:
+			information['performance'] = stockInfo[stock]['performance']
+		except:
+			pnt("performance not found for " + stock)
+
+		information['performance'] = information['performance'][-1:] + information['performance'][:-1] #rotate
+
 		stockInfo[stock] = information
 		order += 1
-	pntDev("Exited getStockPrices")
+
+	sortByParameter("percentChange")
+	for stock in stockInfo:
+		newval = 0
+		stockInfo[stock]['performance'][0] = len(stockInfo) - stockInfo[stock]['order'] #higher pc, higher number
+		for i in range(len(stockInfo[stock]['performance'])):
+			newval += stockInfo[stock]['performance'][i]
+		stockInfo[stock]['performanceNum'] = newval
+	pnt(stockInfo[stock])
+	pnt("Exited updateStockInfo")
 	indentNum -= 1
 def sortByParameter(param): #changes 'order' in stockInfo
 	global indentNum
 	global stockInfo
 	indentNum += 1
-	pntDev("Entered sortByParameter")
+	pnt("Entered sortByParameter")
 
-	pntDev("Parameter: " + param)
-	lowestVal = 9999999.0
-	higherVal = 9999999.0
-	order = 1
-	#find lowest value
-	nextStock = ''
-	for stock in stockInfo:
-		if stockInfo[stock]['lowConfidence']: #skip low confidence
-			stockInfo[stock]['order'] = -50
-			continue
-		if stockInfo[stock][param] < lowestVal:
-			lowestVal = stockInfo[stock][param]
-			nextStock = stock
-		stockInfo[stock]['order'] = -1
-	stockInfo[nextStock]['order'] = 0
-	#work up from there
-	counter = 0
-	while True:
-		counter += 1
-		if counter > 1000:
-			stop()
-		if order > len(stockInfo)-1:
-			break;
-		for stock in stockInfo:
-			if stockInfo[stock]['order'] == -1: #stock order not set
-				if stockInfo[stock][param] >= lowestVal and stockInfo[stock][param] < higherVal:
-					higherVal = stockInfo[stock][param]
-					nextStock = stock
-		lowestVal = higherVal
+	try:
+		pnt("Parameter: " + param)
+		lowestVal = 9999999.0
 		higherVal = 9999999.0
-		stockInfo[nextStock]['order'] = order
-		order += 1
-	pntDev("Exited sortByParameter")
+		order = 1
+		#find lowest value
+		nextStock = ''
+		for stock in stockInfo:
+			if stockInfo[stock]['lowConfidence']: #skip low confidence
+				stockInfo[stock]['order'] = -50
+				continue
+			if stockInfo[stock][param] < lowestVal:
+				lowestVal = stockInfo[stock][param]
+				nextStock = stock
+			stockInfo[stock]['order'] = -1
+		stockInfo[nextStock]['order'] = 0
+		#work up from there
+		counter = 0
+		while True:
+			counter += 1
+			if counter > 1000:
+				stop()
+			if order > len(stockInfo)-1:
+				break;
+			for stock in stockInfo:
+				if stockInfo[stock]['order'] == -1: #stock order not set
+					if stockInfo[stock][param] >= lowestVal and stockInfo[stock][param] < higherVal:
+						higherVal = stockInfo[stock][param]
+						nextStock = stock
+			lowestVal = higherVal
+			higherVal = 9999999.0
+			stockInfo[nextStock]['order'] = order
+			order += 1
+	except Exception as e:
+		pnt("error")
+		pnt("Exited sortByParameter")
+		indentNum -= 1
+		raise ValueError(e)
+	pnt("Exited sortByParameter")
 	indentNum -= 1
 
 #misc
@@ -1524,49 +1720,48 @@ def wait(seconds):
 	time.sleep(seconds)
 def stop():
 	pnt("Stop")
-	pntDev("Stop")
 	while True:
-		wait(1)
+		wait(60)
 def calculateBudget(budget): #returns calculated values
 	global indentNum
 	indentNum += 1
-	pntDev("Entered calculateBudget")
+	pnt("Entered calculateBudget")
 	if budget['weeklyBudgetPerStock'] != 0.0:
-		pntDev("weeklyBudgetPerStock is " + str(budget['weeklyBudgetPerStock']))
+		pnt("weeklyBudgetPerStock is " + str(budget['weeklyBudgetPerStock']))
 		budget['weeklyBudgetTotal'] = numAllCompanies*float(budget['weeklyBudgetPerStock'])
 		budget['dailyBudgetTotal'] = float(budget['weeklyBudgetTotal'])/5
 		budget['dailyBudgetPerStock'] = float(budget['weeklyBudgetPerStock'])/5
 		budget['monthlyBudgetTotal'] = float(budget['weeklyBudgetTotal'])*52/12
 
 	elif budget['weeklyBudgetTotal'] != 0.0:
-		pntDev("weeklyBudgetTotal is " + str(budget['weeklyBudgetTotal']))
+		pnt("weeklyBudgetTotal is " + str(budget['weeklyBudgetTotal']))
 		budget['weeklyBudgetPerStock'] = float(budget['weeklyBudgetTotal'])/numAllCompanies
 		budget['dailyBudgetTotal'] = float(budget['weeklyBudgetTotal'])/5
 		budget['dailyBudgetPerStock'] = float(budget['weeklyBudgetPerStock'])/5
 		budget['monthlyBudgetTotal'] = float(budget['weeklyBudgetTotal'])*52/12
 
 	elif budget['dailyBudgetTotal'] != 0.0:
-		pntDev("dailyBudgetTotal is " + str(budget['dailyBudgetTotal']))
+		pnt("dailyBudgetTotal is " + str(budget['dailyBudgetTotal']))
 		budget['dailyBudgetPerStock'] = float(budget['dailyBudgetTotal'])/numAllCompanies
 		budget['weeklyBudgetPerStock'] = float(budget['dailyBudgetPerStock'])*5
 		budget['weeklyBudgetTotal'] = numAllCompanies*float(budget['weeklyBudgetPerStock'])
 		budget['monthlyBudgetTotal'] = float(budget['weeklyBudgetTotal'])*52/12
 
 	elif budget['dailyBudgetPerStock'] != 0.0:
-		pntDev("dailyBudgetPerStock is " + str(budget['dailyBudgetPerStock']))
+		pnt("dailyBudgetPerStock is " + str(budget['dailyBudgetPerStock']))
 		budget['weeklyBudgetPerStock'] = float(budget['dailyBudgetPerStock'])*5
 		budget['weeklyBudgetTotal'] = numAllCompanies*float(budget['weeklyBudgetPerStock'])
 		budget['dailyBudgetTotal'] = float(budget['weeklyBudgetTotal'])/5
 		budget['monthlyBudgetTotal'] = float(budget['weeklyBudgetTotal'])*52/12
 
 	elif budget['monthlyBudgetTotal'] != 0.0:
-		pntDev("monthlyBudgetTotal is " + str(budget['monthlyBudgetTotal']))
+		pnt("monthlyBudgetTotal is " + str(budget['monthlyBudgetTotal']))
 		budget['weeklyBudgetTotal'] = float(budget['monthlyBudgetTotal'])*12/52
 		budget['dailyBudgetTotal'] = float(budget['weeklyBudgetTotal'])/5
 		budget['dailyBudgetPerStock'] = float(budget['dailyBudgetTotal'])/numAllCompanies
 		budget['weeklyBudgetPerStock'] = float(budget['dailyBudgetPerStock'])*5
 
-	pntDev("Exited calculateBudget")
+	pnt("Exited calculateBudget")
 	indentNum -= 1
 	return budget
 def upgradeFiles(): #files saved are from previous version, convert them to current version
@@ -1595,41 +1790,74 @@ def getTime(): #returns date and time as string
 		printout += "0"
 	printout += str(minute)
 	return printout
+def checkDevThings(): #verifies dev stocks are loaded
+	global indentNum
+	indentNum += 1
+	pnt("Entered checkDevThings")
+	for stock in stockList:
+		exists = False
+		for ref in stockInfo.keys():
+			if stock == ref:
+				exists = True
+		if not exists:
+			pnt("stock " + stock + " added to stockInfo")
+			stockInfo[stock] = {}
+
+	for stock in cryptoList:
+		exists = False
+		for ref in stockInfo.keys():
+			if stock == ref:
+				exists = True
+		if not exists:
+			pnt("crypto " + stock + " added to stockInfo")
+			stockInfo[stock] = {}
+	pnt("Exited checkDevThings")
+	indentNum -= 1
 
 #onstart
 @timeoutable() #specifies function to be able to time out
 def onstart():
 	pnt("Program start")
-	pntDev("Program start")
 	value = ""
 	try:
 		value = sys.argv[1]
 	except:
-		pntDev("No input arg")
+		pnt("No input arg")
 
 	if value == "setup":
-		pntDev("Setup is input arg")
+		pnt("Setup is input arg")
 		startup(1)
 	elif value == "test":
-		pntDev("Test is input arg")
+		pnt("Test is input arg")
 		startup(2)
 	elif value == 'reset':
-		pntDev("Reset is input arg")
+		pnt("Reset is input arg")
 		startup(3)
 	elif value == 'trade':
-		pntDev("Trade is input arg")
+		pnt("Trade is input arg")
 		startup(4)
+	elif value == 'getprices':
+		pnt("getprices is input arg")
+		startup(5)
 	else:
-		pntDev("Normal startup")
+		pnt("Normal startup")
 		startup(0)
 
 	#shutdown
+	global devMode
+	if devMode:
+		checkDevThings()
 	save()
 	logout()
-	pntDev("Program end")
-	pnt("")
-	pntDev("")
+	pnt("Program end")
 if __name__ == "__main__":
-	result = onstart(timeout=30*60) #30 minutes timeout in seconds
-	if result == "None":
-		pntDev("Timed out. Shutting down")
+	try:
+		result = onstart(timeout=30*60) #30 minutes timeout in seconds
+		if result != "None":
+			pnt("Timed out. Shutting down")
+		else:
+			pnt("Shut down correctly")
+			pnt("")
+			pnt("")
+	except Exception as e:
+		pnt("Error: " + str(e))
