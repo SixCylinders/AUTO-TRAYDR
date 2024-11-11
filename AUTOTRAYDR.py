@@ -1,7 +1,7 @@
-# Changelog 0.9.5
+# Changelog 0.9.6
 """
-cleaner code
-lots of other new shit i forgor to document
+minor bugfixes
+buys more in november because of election stuff
 """
 #recommended cron timing below. Program is able to handle other cron timings, buy why would you change it? There's no need for it. you also gotta change TRADE_HOUR and RESET_HOUR
 #0 12,16 * * *
@@ -29,30 +29,30 @@ MIN_BUY_DOLLAR = 1.25 #minimum buy order amount
 INDIVIDUAL_CRASH = -8.0 #if percentChange for stock below this, treat as if it crashed
 DAYS_TO_DIVIDE_MONEY_ACROSS = 60 #daily budget calculated as money/this variable
 
-stockList = ['ADP', 'ACN', 'AFL', 'ALAB', 'AMAT', 'AMCX', 'AMD', 'AMZN', 'ANET', 'AON', 'APO', 'APP', 'ARES', 'ARHS', 'ARM', 'AVGO', 'AXP', #developer stocklist teehee
+stockList = ['ADI', 'ADP', 'ACN', 'AFL', 'ALAB', 'AMAT', 'AMCX', 'AMD', 'AMZN', 'ANET', 'AON', 'APH', 'APO', 'APP', 'ARES', 'ARHS', 'ARM', 'AVGO', 'AXP', #developer stocklist teehee
 	'BAC', 'BKNG', 'BLK', 'BR', 'BRK.B', 'BSX', 'BX',
-	'C', 'CAT', 'CEG', 'CIFR', 'CLSK', 'COPX', 'COST', 'CPER', 'CRWD', 'CSWI',
-	'DELL', 'DIA', 'DJT', 'DTEGY', 'DTST', 
-	'EBAY', 'EME', 'ERO',
-	'FI', 'FICO', 'FIX',
+	'C', 'CARR', 'CAT', 'CEG', 'CIFR', 'CLSK', 'COPX', 'COST', 'CPER', 'CRM', 'CRWD', 'CSWI',
+	'DELL', 'DIA', 'DHR', 'DJT', 'DTEGY', 'DTST', 
+	'EBAY', 'EME', 'EMR', 'ERO',
+	'FI', 'FICO', 'FIX', 'FLTW', 
 	'GD', 'GDDY', 'GDX', 'GE', 'GEV', 'GLD', 'GME', 'GOLD', 'GOOGL', 'GS', 'GWW',
-	'HCA', 'HD', 'HOOD', 'HUBB',
-	'IAU', 'IBM', 'IBKR', 'ICE', 'IDCC', 'INTC', 'IONQ', 'IRM', 'ISRG', 'IVV', 
+	'HCA', 'HD', 'HOOD', 'HTHIY', 'HUBB',
+	'IAU', 'IBM', 'IBKR', 'ICE', 'IDCC', 'INTC', 'INTU', 'IONQ', 'IRM', 'ISRG', 'ITA', 'IVV', 
 	'JPM', 
 	'KGC', 'KKR', 'KLAC', 'KO',
 	'LIN', 'LLY', 'LMT', 'LNG', 'LNTH', 'LOGI', 'LRCX', 
 	'MA', 'MCO', 'META', 'MO', 'MPLX', 'MS', 'MSFT', 'MSI', 'MSTR', 'MU', 
-	'NDAQ', 'NKTX', 'NLR', 'NNE', 'NOW', 'NTAP', 'NVDA', 
+	'NDAQ', 'NKTX', 'NLR', 'NNE', 'NOC', 'NOW', 'NTAP', 'NVDA', 
 	'O', 'OKLO', 'ORCL',
 	'PAA', 'PANW', 'PEG', 'PG', 'PGR', 'PH', 'PLTR', 'PM', 'PWR',
 	'QCOM', 'QQQM', 'QUAL',
-	'RDDT', 'RKLB', 'RTX',
-	'SCCO', 'SHOP', 'SHW', 'SLV', 'SMCI', 'SPGI', 'SPHD', 'SPHQ', 'SPMO', 'SPY', 'SPYG', 'STLD', 'SMH', 'SPHD', 'SYK',
+	'RCRUY', 'RDDT', 'RKLB', 'RTX',
+	'SAP', 'SCCO', 'SHOP', 'SHW', 'SLV', 'SMCI', 'SPGI', 'SPHD', 'SPHQ', 'SPMO', 'SPY', 'SPYG', 'STLD', 'SMH', 'SPHD', 'SYK',
 	'T', 'TDG', 'TT', 'TTD', 'TM', 'TMUS', 'TRGP', 'TRV', 'TSLA', 'TSM', 'TW', 'TXN',
-	'UBS', 'UMI', 'UNH',
+	'UBS', 'UEC', 'UMI', 'UNH',
 	'V', 'VINC', 'VONG', 'VOO', 'VOOG', 'VST', 'VTI', 'VUG', 'VWO',
-	'WELL', 'WMB', 'WMT', 
-	'X', 'XLK', 'XLF', 'XOM',
+	'WAB', 'WELL', 'WMB', 'WMT', 
+	'X', 'XAR', 'XLK', 'XLF', 'XOM',
 ]
 cryptoList = ['BTC', 'ETH', 'DOGE', 'SHIB']
 loadedDevPrefs = False #overrides setup if dev prefs were loaded
@@ -140,6 +140,14 @@ TODO cant get out of errorcode = 1
 TODO allow no 2factor in login()
 """
 
+now = datetime.now()
+weekday = now.weekday()
+hour = now.hour
+minute = now.minute
+day = now.day
+month = now.month
+year = now.year
+
 #startup/shutdown
 def verifyDevMode(): 
 	global indentNum
@@ -214,6 +222,25 @@ def verifyDevMode():
 	misc['performanceDays'] = 31
 
 	pnt("verifying savings")
+	balances = []
+	for item in savings:
+		balances.append(savings[item]['balance'])
+		savings[item] = {}
+	savings['main']['addMonthly'] = 300
+	savings['main']['max'] = 100000
+	savings['crash']['addDaily'] = 2
+	savings['crash']['max'] = 500
+	savings['car']['addMonthly'] = 300
+	savings['car']['max'] = 20000
+	savings['house']['addMonthly'] = 200
+	savings['house']['max'] = 1000000
+	for item in savings:
+		try:
+			savings[item]['balance'] = balances[0]
+			balances.pop(0)
+		else:
+			pnt("no balance for " + item)
+			savings[item]['balance'] = 0
 
 	pnt("Exited verifyDevMode")
 	indentNum -= 1
@@ -340,14 +367,6 @@ def mainLoop():
 	global oneTime
 	indentNum += 1
 	pnt("Entered mainLoop")
-	
-	now = datetime.now()
-	weekday = now.weekday()
-	hour = now.hour
-	minute = now.minute
-	day = now.day
-	month = now.month
-	year = now.year
 
 	isweekend = weekday > 4 and not oneTime['weekendCheck'] #skip weekends
 	pnt("oneTime['forceWeekend'] " + str(oneTime['forceWeekend']))
@@ -433,18 +452,24 @@ def reset():
 	pnt("Got brokerage balance " + str(budget["moneyLeftTotal"]))
 
 	pnt("Allocating savings...")
-	now = datetime.now()
-	day = now.day
 	for item in savings:
 		if budget["moneyLeftTotal"] > savings[item]['balance']:
-			if day == ADD_SAVINGS_DAY and savings[item]['balance'] < savings[item]['max']:
-				pnt("Adding " + str(savings[item]['addMonthly']) + " to " + item)
-				savings[item]['balance'] += savings[item]['addMonthly']
-			if item == "crash": #crash actually incremented daily
-				if savings[item]['balance'] < savings[item]['max']:
+			if day == ADD_SAVINGS_DAY and savings[item]['balance'] < savings[item]['max']: #monthly
+				try:
 					savings[item]['balance'] += savings[item]['addMonthly']
-				else:
-					savings[item]['balance'] += savings[item]['addMonthly']*0.5
+					pnt("Added " + str(savings[item]['addMonthly']) + " to " + item)
+				except:
+					pass
+
+			if savings[item]['balance'] < savings[item]['max']: #daily
+				try: 
+					savings[item]['balance'] += savings[item]['addDaily']
+					pnt("Added " + str(savings[item]['addDaily']) + " to " + item)
+				except:
+					pass
+
+			if item == "crash" and savings[item]['balance'] > savings[item]['max']: #crash can go over limit
+					savings[item]['balance'] += savings[item]['addDaily']*0.5
 
 			budget["moneyLeftTotal"] -= savings[item]['balance']
 			pnt(str(item) + str(savings[item]['balance']))
@@ -481,6 +506,17 @@ def reset():
 	pnt("Filled moneyLeftDaily with normal amount")
 	pnt(budget['moneyLeftTotal'])
 
+	if month == 11: #election shenanigans, so spend more
+		pnt("NOVEMBER!!!!!!!!!")
+		if budget['moneyLeftTotal'] > budget['dailyBudget']:
+			if defconLevel != 2:
+				pnt("moneyLeftDaily overfilled with " + str(budget['dailyBudget']))
+				budget['moneyLeftDaily'] += budget['dailyBudget']
+				budget['moneyLeftTotal'] -= budget['dailyBudget']
+			else:
+				pnt("moneyLeftDaily overfilled with " + str(budget['dailyBudget']) + " but not really")
+		else:
+			pnt("Program tried to add $" + str(budget['dailyBudget']) + " to daily budget with $" + str(budget['moneyLeftTotal']) + " left")
 	pnt("Exited reset")
 	indentNum -= 1
 	
@@ -636,13 +672,6 @@ def tradeParameter(num, shoppingCart, condition, isBottom):
 	4 = buy top performer
 	5 = buy random
 	"""
-
-	if num == TRADE_PARAM_DISABLED or num == 0:
-		pnt("Disabled")
-		pnt("Exited tradeParameter")
-		indentNum -= 1
-		return
-
 	newShoppingCart = shoppingCart
 	localBought = []
 	limitNum = num
@@ -650,6 +679,16 @@ def tradeParameter(num, shoppingCart, condition, isBottom):
 		limitNum = len(stockInfo) - num
 	isBreak = False
 	doPrint = True
+
+	if num == TRADE_PARAM_DISABLED or num == 0:
+		pnt("Disabled")
+		pnt("Exited tradeParameter")
+		indentNum -= 1
+		return
+
+	if month == 11: #spend twice as much in november because of election shenanigans
+		newShoppingCart *= 2
+	
 	while not isBreak:
 		if limitNum > len(stockInfo) or limitNum < 0:
 			pnt("Made it to the bottom of the list. no more companies qualify for this parameter")
@@ -686,7 +725,7 @@ def tradeParameter(num, shoppingCart, condition, isBottom):
 						pnt(stock + " pc not below theshold " + str(stockInfo[stock]['percentChange']))
 					continue
 			elif condition == 0:
-				if stockInfo[stock]['equity'] > tradeParams['equityBottomThreshold']:
+				if stockInfo[stock]['equity'] > tradeParams['equityBottomThreshold']*stockInfo[stock]['confidence']: #equity threshold accounts for performance
 					if doPrint:
 						pnt(stock + " equity greater than minimum " + str(stockInfo[stock]['equity']))
 					continue
@@ -731,9 +770,7 @@ def placeOrder(stock, shoppingCart, buy): #returns false if trade fails
 	pnt("shoppingCart " + str(shoppingCart))
 	pnt("buy " + str(buy))
 
-	hour = datetime.now().hour #markets closed anyway
-	minute = datetime.now().minute
-	if hour >= 16 or (hour < 9 and minute < 30):
+	if hour >= 16 or (hour < 9 and minute < 30):#markets closed anyway
 		pnt("Markets closed, skipping order")
 		pnt("Exited placeOrder")
 		indentNum -= 1
@@ -1494,30 +1531,31 @@ def stop():
 def getInput(): #returns user input
 	return input("-->")
 def getTime(): #returns date and time as string
-	now = datetime.now()
-	weekday = now.weekday()
-	hour = now.hour
-	minute = now.minute
-	day = now.day
-	month = now.month
-	year = now.year
-	printout = str(month) + "/" + str(day) + "/" + str(year) + "  "
-	if hour < 10:
+	Anow = datetime.now()
+	Aweekday = Anow.weekday()
+	Ahour = Anow.hour
+	Aminute = Anow.minute
+	Aday = Anow.day
+	Amonth = Anow.month
+	Ayear = Anow.year
+	printout = str(Amonth) + "/" + str(Aday) + "/" + str(Ayear) + "  "
+	if Ahour < 10:
 		printout += "0"
-	printout += str(hour)
-	if minute < 10:
+	printout += str(Ahour)
+	if Aminute < 10:
 		printout += "0"
-	printout += str(minute)
+	printout += str(Aminute)
 	return printout
 
 #onstart
 @timeoutable() #specifies function to be able to time out
 def onstart():
-	try:	
-		scriptDir = os.path.dirname(__file__)
-		os.remove(os.path.join(scriptDir, "log.txt"))
-	except:
-		pass
+	if hour == TRADE_HOUR:
+		try:
+			scriptDir = os.path.dirname(__file__)
+			open(os.path.join(scriptDir, "log.txt"), "w").close() #clear contents of file
+		except:
+			pass
 	pnt("Program start")
 	value = ""
 	try:
